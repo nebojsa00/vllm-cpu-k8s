@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+*.egg-info/
+
+# Secrets and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*secret*.local.yaml
+kubeconfig
+kubeconfig.*
+.kube/
+
+# Hugging Face model files and caches
+*.safetensors
+*.gguf
+*.bin
+*.pt
+*.pth
+*.ckpt
+models/
+.cache/
+huggingface/
+
+# Local files
+*.log
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Temporary local outputs
+benchmarks/results.csv
+
+# Experimental and obsolete files
+Dockerfile.txt
+requirements-original.txt

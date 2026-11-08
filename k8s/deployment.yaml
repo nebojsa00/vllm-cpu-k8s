@@ -1,0 +1,182 @@
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-server
+  namespace: vllm
+  labels:
+    app: vllm-server
+
+spec:
+  replicas: 1
+
+  strategy:
+    type: Recreate
+
+  selector:
+    matchLabels:
+      app: vllm-server
+
+  template:
+    metadata:
+      labels:
+        app: vllm-server
+
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+
+      initContainers:
+        - name: model-downloader
+          image: vllm-model-downloader:0.3
+          imagePullPolicy: Never
+
+          env:
+            - name: MODEL_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: vllm-config
+                  key: MODEL_ID
+
+            - name: MODEL_DIR
+              valueFrom:
+                configMapKeyRef:
+                  name: vllm-config
+                  key: MODEL_DIR
+
+            - name: MODEL_REVISION
+              valueFrom:
+                configMapKeyRef:
+                  name: vllm-config
+                  key: MODEL_REVISION
+
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: vllm-secrets
+                  key: HF_TOKEN
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+
+          volumeMounts:
+            - name: model-storage
+              mountPath: /models
+
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "768Mi"
+              cpu: "2"
+
+      # ОСНОВНОЙ КОНТЕЙНЕР: vLLM на CPU
+      containers:
+        - name: vllm
+          image: vllm-cpu-custom:0.4
+          imagePullPolicy: Never
+
+          envFrom:
+            - configMapRef:
+                name: vllm-config
+
+
+          env:
+            - name: VLLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: vllm-secrets
+                  key: VLLM_API_KEY
+
+            - name: PYTHONPATH
+              value: "/app"
+
+
+          command:
+            - /bin/sh
+            - -c
+
+
+          args:
+            - |
+              exec vllm serve "$MODEL_DIR" \
+                --host "$VLLM_HOST" \
+                --port "$VLLM_PORT" \
+                --served-model-name "$MODEL_ID" \
+                --dtype bfloat16 \
+                --max-model-len "$VLLM_MAX_MODEL_LEN" \
+                --max-num-seqs "$VLLM_MAX_NUM_SEQS" \
+                --max-num-batched-tokens "$VLLM_MAX_NUM_BATCHED_TOKENS" \
+                --kv-cache-memory-bytes 134217728 \
+                --enforce-eager \
+                --middleware "$VLLM_CUSTOM_MIDDLEWARE" \
+                --no-enable-log-requests \
+                --no-enable-log-outputs \
+                --disable-uvicorn-access-log
+
+
+          ports:
+            - name: http
+              containerPort: 8000
+
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+
+          volumeMounts:
+            # Модель загружается из PVC
+            - name: model-storage
+              mountPath: /models
+              readOnly: true
+
+            # Разделяемая память для процессов vLLM
+            - name: shared-memory
+              mountPath: /dev/shm
+
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "3Gi"
+              cpu: "4"
+
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 15
+            failureThreshold: 40
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 20
+            failureThreshold: 3
+
+      volumes:
+        - name: model-storage
+          persistentVolumeClaim:
+            claimName: model-cache
+
+        # Исправление ошибки Insufficient space in /dev/shm
+        - name: shared-memory
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi

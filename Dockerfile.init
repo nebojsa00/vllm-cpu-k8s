@@ -1,0 +1,28 @@
+FROM python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df
+
+RUN groupadd --gid 10001 appgroup \
+    && useradd --uid 10001 --gid 10001 \
+       --create-home --shell /usr/sbin/nologin appuser \
+    && mkdir -p /app /models /home/appuser/.cache \
+    && chown -R 10001:10001 /app /models /home/appuser
+
+WORKDIR /app
+
+COPY requirements-downloader.txt /app/requirements.txt
+
+RUN python -m pip install \
+    --no-cache-dir \
+    -r /app/requirements.txt \
+    && python -m pip check
+
+COPY scripts/download_model.py /app/download_model.py
+
+ENV HOME=/home/appuser \
+    HF_HOME=/home/appuser/.cache/huggingface \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Запуск без привилегий root
+USER 10001:10001
+
+ENTRYPOINT ["python", "/app/download_model.py"]

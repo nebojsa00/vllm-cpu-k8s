@@ -1,0 +1,89 @@
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: model-download-test
+  namespace: vllm
+
+spec:
+  restartPolicy: Never
+
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+
+  initContainers:
+    - name: model-downloader
+      image: vllm-model-downloader:0.1
+      imagePullPolicy: Never
+
+      env:
+        - name: MODEL_ID
+          value: "Qwen/Qwen2.5-0.5B-Instruct"
+        - name: MODEL_DIR
+          value: "/models/qwen"
+        - name: MODEL_REVISION
+          value: "main"
+
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+
+      volumeMounts:
+        - name: model-storage
+          mountPath: /models
+
+  containers:
+    - name: model-check
+      image: vllm-model-downloader:0.1
+      imagePullPolicy: Never
+
+      command:
+        - python
+        - -c
+
+      args:
+        - |
+          from pathlib import Path
+
+          model_dir = Path("/models/qwen")
+
+          required_files = [
+              "config.json",
+              "tokenizer_config.json",
+              ".download_complete",
+          ]
+
+          for filename in required_files:
+              path = model_dir / filename
+              assert path.is_file(), f"Missing: {filename}"
+              print(f"OK: {filename}")
+
+          weights = list(model_dir.glob("*.safetensors"))
+          assert weights, "Model weights missing"
+
+          print(f"OK: {len(weights)} safetensors file(s)")
+          print("Model cache verified")
+
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+
+      volumeMounts:
+        - name: model-storage
+          mountPath: /models
+          readOnly: true
+
+  volumes:
+    - name: model-storage
+      persistentVolumeClaim:
+        claimName: model-cache
