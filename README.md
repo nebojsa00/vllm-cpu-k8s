@@ -45,6 +45,33 @@ kubectl get pods -n vllm
 
 Для публичной SmolLM2 токен Hugging Face не требуется. При первом запуске `initContainer` скачивает модель на PVC, при следующих — использует сохраненные файлы. Ревизия модели зафиксирована в `k8s/configmap.yaml` (`12fd25f77366fa6b3b4b768ec3050bf629380bac`).
 
+## Возможные проблемы при запуске
+
+**kubectl не подключается к API-серверу k3d**
+
+На Windows с Docker Desktop и VPN иногда возникает ошибка подключения к `host.docker.internal`, хотя кластер создан и запущен.
+
+Сначала проверяем:
+
+```powershell
+k3d cluster list
+docker ps --filter "name=k3d-llm-local"
+kubectl config view --minify
+```
+
+Если порт API-сервера доступен через `127.0.0.1`, но недоступен через `host.docker.internal`, можно изменить адрес в kubeconfig:
+
+```powershell
+$server = kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}'
+$port = ([uri]$server).Port
+kubectl config set-cluster k3d-llm-local --server="https://127.0.0.1:$port"
+kubectl get nodes
+```
+
+Порт берется из текущего kubeconfig, так как при каждом создании кластера он может отличаться.
+
+Не следует отключать проверку TLS-сертификатов. Если появляется ошибка `x509`, необходимо проверить настройки сертификата и адрес API-сервера.
+
 ## Запрос к API
 
 В одном окне PowerShell:
