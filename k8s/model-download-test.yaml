@@ -1,4 +1,3 @@
-
 apiVersion: v1
 kind: Pod
 metadata:
@@ -19,16 +18,18 @@ spec:
 
   initContainers:
     - name: model-downloader
-      image: vllm-model-downloader:0.1
+      image: vllm-model-downloader:0.3
       imagePullPolicy: Never
 
       env:
         - name: MODEL_ID
-          value: "Qwen/Qwen2.5-0.5B-Instruct"
+          value: "HuggingFaceTB/SmolLM2-135M-Instruct"
+
         - name: MODEL_DIR
-          value: "/models/qwen"
+          value: "/models/smollm2-135m"
+
         - name: MODEL_REVISION
-          value: "main"
+          value: "12fd25f77366fa6b3b4b768ec3050bf629380bac"
 
       securityContext:
         allowPrivilegeEscalation: false
@@ -42,7 +43,7 @@ spec:
 
   containers:
     - name: model-check
-      image: vllm-model-downloader:0.1
+      image: vllm-model-downloader:0.3
       imagePullPolicy: Never
 
       command:
@@ -53,11 +54,12 @@ spec:
         - |
           from pathlib import Path
 
-          model_dir = Path("/models/qwen")
+          model_dir = Path("/models/smollm2-135m")
 
           required_files = [
               "config.json",
               "tokenizer_config.json",
+              "tokenizer.json",
               ".download_complete",
           ]
 
@@ -68,6 +70,15 @@ spec:
 
           weights = list(model_dir.glob("*.safetensors"))
           assert weights, "Model weights missing"
+
+          marker = (
+              model_dir / ".download_complete"
+          ).read_text(encoding="utf-8").splitlines()
+
+          assert marker == [
+              "HuggingFaceTB/SmolLM2-135M-Instruct",
+              "12fd25f77366fa6b3b4b768ec3050bf629380bac",
+          ], "Model revision mismatch"
 
           print(f"OK: {len(weights)} safetensors file(s)")
           print("Model cache verified")
@@ -87,3 +98,4 @@ spec:
     - name: model-storage
       persistentVolumeClaim:
         claimName: model-cache
+
